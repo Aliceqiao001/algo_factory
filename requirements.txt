@@ -1,0 +1,9 @@
+anthropic
+langgraph
+langchain
+chromadb
+networkx
+streamlit
+pandas
+scikit-learn
+python-dotenv

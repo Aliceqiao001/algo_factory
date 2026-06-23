@@ -1,0 +1,670 @@
+{
+  "capabilities": [
+    {
+      "id": "logistic_regression_churn",
+      "name": "逻辑回归流失预测",
+      "category": "classification",
+      "description": "使用逻辑回归对客户流失进行二分类预测，适合线性可分场景，可解释性强。",
+      "applicable_conditions": [
+        "目标变量为二分类",
+        "特征与目标变量存在线性关系",
+        "数据量 > 500",
+        "特征已完成标准化"
+      ],
+      "input_schema": {
+        "required_columns": [
+          "target"
+        ],
+        "optional_columns": [
+          "age",
+          "tenure_months",
+          "monthly_charges",
+          "total_charges",
+          "num_products"
+        ],
+        "min_rows": 500,
+        "data_types": {
+          "target": "int",
+          "age": "float",
+          "tenure_months": "float",
+          "monthly_charges": "float",
+          "total_charges": "float"
+        }
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [
+          "y_pred",
+          "y_prob"
+        ],
+        "description": "预测标签（0/1）及对应的正类概率"
+      },
+      "metrics": [
+        "accuracy",
+        "roc_auc",
+        "f1",
+        "precision",
+        "recall"
+      ],
+      "dependencies": [
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.metrics import accuracy_score, roc_auc_score, f1_score, classification_report\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nscaler = StandardScaler()\nX_scaled = scaler.fit_transform(X)\n\nX_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42, stratify=y)\n\nmodel = LogisticRegression(C=1.0, max_iter=1000, random_state=42)\nmodel.fit(X_train, y_train)\n\ny_pred = model.predict(X_test)\ny_prob = model.predict_proba(X_test)[:, 1]\n\nresults = {\n    'accuracy': accuracy_score(y_test, y_pred),\n    'roc_auc': roc_auc_score(y_test, y_prob),\n    'f1': f1_score(y_test, y_pred),\n}\nprint(results)\nprint(classification_report(y_test, y_pred))\n",
+      "hyperparameters": [
+        {
+          "name": "C",
+          "default": 1.0,
+          "range": [
+            0.001,
+            0.01,
+            0.1,
+            1.0,
+            10.0,
+            100.0
+          ],
+          "description": "正则化强度的倒数，值越小正则化越强"
+        },
+        {
+          "name": "max_iter",
+          "default": 1000,
+          "range": [
+            100,
+            500,
+            1000,
+            2000
+          ],
+          "description": "求解器最大迭代次数"
+        },
+        {
+          "name": "solver",
+          "default": "lbfgs",
+          "range": [
+            "lbfgs",
+            "liblinear",
+            "saga"
+          ],
+          "description": "优化算法"
+        }
+      ],
+      "validation_history": []
+    },
+    {
+      "id": "random_forest_churn",
+      "name": "随机森林流失预测",
+      "category": "classification",
+      "description": "使用随机森林集成学习方法预测客户流失，对特征缩放不敏感，能处理非线性关系并提供特征重要性。",
+      "applicable_conditions": [
+        "目标变量为二分类",
+        "数据量 > 1000",
+        "存在非线性特征关系",
+        "需要特征重要性分析"
+      ],
+      "input_schema": {
+        "required_columns": [
+          "target"
+        ],
+        "optional_columns": [
+          "age",
+          "tenure_months",
+          "monthly_charges",
+          "total_charges",
+          "num_products",
+          "has_internet",
+          "has_phone"
+        ],
+        "min_rows": 1000,
+        "data_types": {
+          "target": "int",
+          "age": "float",
+          "tenure_months": "float",
+          "monthly_charges": "float",
+          "total_charges": "float",
+          "has_internet": "int",
+          "has_phone": "int"
+        }
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [
+          "y_pred",
+          "y_prob",
+          "feature_importance"
+        ],
+        "description": "预测标签、正类概率及各特征重要性得分"
+      },
+      "metrics": [
+        "accuracy",
+        "roc_auc",
+        "f1",
+        "precision",
+        "recall"
+      ],
+      "dependencies": [
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.metrics import accuracy_score, roc_auc_score, f1_score, classification_report\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nmodel = RandomForestClassifier(n_estimators=100, max_depth=None, random_state=42, n_jobs=-1)\nmodel.fit(X_train, y_train)\n\ny_pred = model.predict(X_test)\ny_prob = model.predict_proba(X_test)[:, 1]\n\nfeature_importance = pd.Series(model.feature_importances_, index=X_train.columns).sort_values(ascending=False)\n\nresults = {\n    'accuracy': accuracy_score(y_test, y_pred),\n    'roc_auc': roc_auc_score(y_test, y_prob),\n    'f1': f1_score(y_test, y_pred),\n}\nprint(results)\nprint('Top features:')\nprint(feature_importance.head(10))\n",
+      "hyperparameters": [
+        {
+          "name": "n_estimators",
+          "default": 100,
+          "range": [
+            50,
+            100,
+            200,
+            500
+          ],
+          "description": "决策树数量"
+        },
+        {
+          "name": "max_depth",
+          "default": null,
+          "range": [
+            null,
+            5,
+            10,
+            20
+          ],
+          "description": "单棵树最大深度，null表示不限制"
+        },
+        {
+          "name": "min_samples_split",
+          "default": 2,
+          "range": [
+            2,
+            5,
+            10
+          ],
+          "description": "内部节点再划分所需的最小样本数"
+        },
+        {
+          "name": "class_weight",
+          "default": null,
+          "range": [
+            null,
+            "balanced"
+          ],
+          "description": "类别权重，balanced可缓解不平衡问题"
+        }
+      ],
+      "validation_history": []
+    },
+    {
+      "id": "xgboost_churn",
+      "name": "XGBoost流失预测",
+      "category": "classification",
+      "description": "使用XGBoost梯度提升树预测客户流失，在表格数据上通常达到最优精度，内置正则化防过拟合。",
+      "applicable_conditions": [
+        "目标变量为二分类",
+        "数据量 > 1000",
+        "允许较长训练时间",
+        "对预测精度要求高"
+      ],
+      "input_schema": {
+        "required_columns": [
+          "target"
+        ],
+        "optional_columns": [
+          "age",
+          "tenure_months",
+          "monthly_charges",
+          "total_charges",
+          "num_products",
+          "has_internet",
+          "has_phone"
+        ],
+        "min_rows": 1000,
+        "data_types": {
+          "target": "int",
+          "age": "float",
+          "tenure_months": "float",
+          "monthly_charges": "float",
+          "total_charges": "float"
+        }
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [
+          "y_pred",
+          "y_prob"
+        ],
+        "description": "预测标签及正类概率"
+      },
+      "metrics": [
+        "accuracy",
+        "roc_auc",
+        "f1",
+        "precision",
+        "recall",
+        "log_loss"
+      ],
+      "dependencies": [
+        "xgboost",
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom xgboost import XGBClassifier\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.metrics import accuracy_score, roc_auc_score, f1_score, classification_report\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nmodel = XGBClassifier(\n    n_estimators=200,\n    max_depth=4,\n    learning_rate=0.05,\n    subsample=0.8,\n    colsample_bytree=0.8,\n    random_state=42,\n    eval_metric='logloss',\n)\nmodel.fit(X_train, y_train, verbose=False)\n\ny_pred = model.predict(X_test)\ny_prob = model.predict_proba(X_test)[:, 1]\n\nresults = {\n    'accuracy': accuracy_score(y_test, y_pred),\n    'roc_auc': roc_auc_score(y_test, y_prob),\n    'f1': f1_score(y_test, y_pred),\n}\nprint(results)\n",
+      "hyperparameters": [
+        {
+          "name": "n_estimators",
+          "default": 200,
+          "range": [
+            100,
+            200,
+            500,
+            1000
+          ],
+          "description": "提升轮数（树的数量）"
+        },
+        {
+          "name": "max_depth",
+          "default": 6,
+          "range": [
+            3,
+            4,
+            6,
+            8,
+            10
+          ],
+          "description": "每棵树的最大深度"
+        },
+        {
+          "name": "learning_rate",
+          "default": 0.1,
+          "range": [
+            0.01,
+            0.05,
+            0.1,
+            0.2
+          ],
+          "description": "学习率，控制每一步的步长"
+        },
+        {
+          "name": "subsample",
+          "default": 0.8,
+          "range": [
+            0.6,
+            0.7,
+            0.8,
+            1.0
+          ],
+          "description": "每棵树使用的样本比例"
+        },
+        {
+          "name": "colsample_bytree",
+          "default": 0.8,
+          "range": [
+            0.6,
+            0.7,
+            0.8,
+            1.0
+          ],
+          "description": "每棵树使用的特征比例"
+        }
+      ],
+      "validation_history": [
+        {
+          "timestamp": "2026-06-23T17:03:13.641490",
+          "success": false,
+          "metrics": {},
+          "error_message": "Traceback (most recent call last):\n  File \"D:\\agent\\algo_factory\\temp_algo_1782205393067.py\", line 3, in <module>\n    from xgboost import XGBClassifier\nModuleNotFoundError: No module named 'xgboost'\n",
+          "code_version": "3",
+          "notes": "修复次数:3, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T17:31:29.168466",
+          "success": false,
+          "metrics": {},
+          "error_message": "Traceback (most recent call last):\n  File \"D:\\agent\\algo_factory\\temp_algo_1782207088574.py\", line 3, in <module>\n    from xgboost import XGBClassifier\nModuleNotFoundError: No module named 'xgboost'\n",
+          "code_version": "3",
+          "notes": "修复次数:3, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T18:41:31.595840",
+          "success": false,
+          "metrics": {
+            "accuracy": 0.0,
+            "auc": 0.0,
+            "f1": 0.0
+          },
+          "error_message": "C:\\Users\\HUAWEI\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\xgboost\\training.py:200: UserWarning: [18:41:29] WARNING: C:\\actions-runner\\_work\\xgboost\\xgboost\\src\\learner.cc:782: \nParameters: { \"use_label_encoder\" } are not used.\n\n  bst.update(dtrain, iteration=i, fobj=obj)\n",
+          "code_version": "3",
+          "notes": "修复次数:3, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T18:48:32.358917",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.785,
+            "auc": 0.8394097222222223,
+            "f1": 0.6950354609929078
+          },
+          "error_message": null,
+          "code_version": "0",
+          "notes": "修复次数:0, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T18:51:54.384034",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.785,
+            "auc": 0.8394097222222223,
+            "f1": 0.6950354609929078
+          },
+          "error_message": null,
+          "code_version": "0",
+          "notes": "修复次数:0, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T18:56:42.508771",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.785,
+            "auc": 0.8394097222222223,
+            "f1": 0.6950354609929078
+          },
+          "error_message": null,
+          "code_version": "0",
+          "notes": "修复次数:0, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T18:58:11.816851",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.785,
+            "auc": 0.8394097222222223,
+            "f1": 0.6950354609929078
+          },
+          "error_message": null,
+          "code_version": "0",
+          "notes": "修复次数:0, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T19:06:22.343108",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.785,
+            "auc": 0.8394097222222223,
+            "f1": 0.6950354609929078
+          },
+          "error_message": null,
+          "code_version": "0",
+          "notes": "修复次数:0, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T19:14:24.961783",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.785,
+            "auc": 0.8394097222222223,
+            "f1": 0.6950354609929078
+          },
+          "error_message": null,
+          "code_version": "1",
+          "notes": "修复次数:1, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T19:19:26.079406",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.79296875,
+            "auc": 0.86962890625,
+            "f1": 0.7937743190661478
+          },
+          "error_message": null,
+          "code_version": "0",
+          "notes": "修复次数:0, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-23T19:30:50.043442",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.785,
+            "auc": 0.8394097222222223,
+            "f1": 0.6950354609929078
+          },
+          "error_message": null,
+          "code_version": "0",
+          "notes": "修复次数:0, 查询:需要客户流失预测模型"
+        }
+      ]
+    },
+    {
+      "id": "smote_oversampling",
+      "name": "SMOTE过采样处理不平衡数据",
+      "category": "preprocessing",
+      "description": "使用SMOTE（合成少数过采样技术）对不平衡数据集的少数类进行合成增样，改善分类器偏向多数类的问题。",
+      "applicable_conditions": [
+        "目标变量为二分类",
+        "正负样本比例 > 3:1（不平衡数据）",
+        "数据量 > 200",
+        "需要在训练集上应用（避免数据泄露）"
+      ],
+      "input_schema": {
+        "required_columns": [
+          "target"
+        ],
+        "optional_columns": [],
+        "min_rows": 200,
+        "data_types": {
+          "target": "int"
+        }
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [
+          "X_resampled",
+          "y_resampled"
+        ],
+        "description": "过采样后的特征矩阵和标签向量，仅用于训练集"
+      },
+      "metrics": [
+        "class_distribution_ratio"
+      ],
+      "dependencies": [
+        "imbalanced-learn",
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom imblearn.over_sampling import SMOTE\nfrom sklearn.model_selection import train_test_split\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nprint(f'过采样前训练集分布: {dict(y_train.value_counts())}')\n\nsmote = SMOTE(k_neighbors=5, random_state=42)\nX_train_res, y_train_res = smote.fit_resample(X_train, y_train)\n\nprint(f'过采样后训练集分布: {dict(pd.Series(y_train_res).value_counts())}')\nprint(f'训练集样本数: {len(X_train)} -> {len(X_train_res)}')\n\nresults = {\n    'original_size': len(X_train),\n    'resampled_size': len(X_train_res),\n    'class_ratio_after': (y_train_res == 1).sum() / (y_train_res == 0).sum(),\n}\nprint(results)\n",
+      "hyperparameters": [
+        {
+          "name": "k_neighbors",
+          "default": 5,
+          "range": [
+            3,
+            5,
+            7,
+            10
+          ],
+          "description": "生成合成样本时使用的最近邻数量"
+        },
+        {
+          "name": "sampling_strategy",
+          "default": "auto",
+          "range": [
+            "auto",
+            "minority",
+            "not majority"
+          ],
+          "description": "过采样策略，auto表示过采样至多数类数量"
+        }
+      ],
+      "validation_history": []
+    },
+    {
+      "id": "standard_scaler_preprocessing",
+      "name": "标准化预处理",
+      "category": "preprocessing",
+      "description": "使用StandardScaler将特征标准化为零均值单位方差，对线性模型（逻辑回归、SVM）和基于距离的模型（KNN）尤为重要。",
+      "applicable_conditions": [
+        "使用线性模型（逻辑回归、线性SVM）",
+        "使用基于距离的算法（KNN、K-Means）",
+        "特征量纲差异显著",
+        "数据量 > 100"
+      ],
+      "input_schema": {
+        "required_columns": [],
+        "optional_columns": [
+          "age",
+          "tenure_months",
+          "monthly_charges",
+          "total_charges"
+        ],
+        "min_rows": 100,
+        "data_types": {}
+      },
+      "output_schema": {
+        "format": "numpy_array",
+        "columns": [],
+        "description": "标准化后的特征矩阵，均值为0，标准差为1"
+      },
+      "metrics": [
+        "feature_mean",
+        "feature_std"
+      ],
+      "dependencies": [
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.model_selection import train_test_split\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nscaler = StandardScaler()\nX_train_scaled = scaler.fit_transform(X_train)\nX_test_scaled = scaler.transform(X_test)\n\nprint(f'特征均值（训练集）: {X_train_scaled.mean(axis=0).round(4)}')\nprint(f'特征标准差（训练集）: {X_train_scaled.std(axis=0).round(4)}')\n\nresults = {\n    'feature_mean': float(X_train_scaled.mean()),\n    'feature_std': float(X_train_scaled.std()),\n    'n_features': X_train_scaled.shape[1],\n}\nprint(results)\n",
+      "hyperparameters": [
+        {
+          "name": "with_mean",
+          "default": true,
+          "range": [
+            true,
+            false
+          ],
+          "description": "是否减去均值进行中心化"
+        },
+        {
+          "name": "with_std",
+          "default": true,
+          "range": [
+            true,
+            false
+          ],
+          "description": "是否除以标准差进行缩放"
+        }
+      ],
+      "validation_history": []
+    },
+    {
+      "id": "feature_selection_rfe",
+      "name": "RFE递归特征消除",
+      "category": "feature_engineering",
+      "description": "使用递归特征消除（RFE）自动筛选最重要的特征子集，减少特征维度，降低过拟合风险，提升模型可解释性。",
+      "applicable_conditions": [
+        "特征数量 > 10",
+        "存在噪声或冗余特征",
+        "需要提高模型可解释性",
+        "数据量 > 500"
+      ],
+      "input_schema": {
+        "required_columns": [
+          "target"
+        ],
+        "optional_columns": [],
+        "min_rows": 500,
+        "data_types": {
+          "target": "int"
+        }
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [
+          "selected_features",
+          "feature_ranking"
+        ],
+        "description": "被选中的特征列表及每个特征的排名"
+      },
+      "metrics": [
+        "n_features_selected",
+        "cv_score_with_selected_features"
+      ],
+      "dependencies": [
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom sklearn.feature_selection import RFE\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.model_selection import cross_val_score, train_test_split\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nestimator = RandomForestClassifier(n_estimators=50, random_state=42)\nn_features_to_select = max(1, X_train.shape[1] // 2)\n\nrfe = RFE(estimator=estimator, n_features_to_select=n_features_to_select, step=1)\nrfe.fit(X_train, y_train)\n\nselected_features = X_train.columns[rfe.support_].tolist()\nfeature_ranking = pd.Series(rfe.ranking_, index=X_train.columns).sort_values()\n\ncv_scores = cross_val_score(estimator, X_train[selected_features], y_train, cv=5, scoring='roc_auc')\n\nresults = {\n    'selected_features': selected_features,\n    'n_features_selected': len(selected_features),\n    'cv_roc_auc_mean': float(cv_scores.mean()),\n    'cv_roc_auc_std': float(cv_scores.std()),\n}\nprint(results)\nprint('Selected features:', selected_features)\n",
+      "hyperparameters": [
+        {
+          "name": "n_features_to_select",
+          "default": null,
+          "range": [
+            null,
+            5,
+            10,
+            15,
+            20
+          ],
+          "description": "目标选择特征数，null表示自动取特征总数的一半"
+        },
+        {
+          "name": "step",
+          "default": 1,
+          "range": [
+            1,
+            2,
+            5
+          ],
+          "description": "每轮消除的特征数量"
+        }
+      ],
+      "validation_history": []
+    }
+  ],
+  "data_patterns": [
+    {
+      "id": "imbalanced_data",
+      "name": "不平衡数据",
+      "description": "目标变量正负样本比例严重不均，通常正类（流失）占比低于20%，导致模型偏向预测多数类。需要过采样、欠采样或调整类别权重。"
+    },
+    {
+      "id": "high_cardinality_features",
+      "name": "高基数特征",
+      "description": "某些类别型特征（如地区、产品ID）取值种类过多，直接One-Hot编码会导致特征维度爆炸。需要Target Encoding、频率编码或特征嵌入处理。"
+    },
+    {
+      "id": "missing_values",
+      "name": "缺失值",
+      "description": "数据集中存在缺失值（NaN），直接训练会报错或引入偏差。需要均值/中位数填充、插值、或使用能处理缺失值的算法（如XGBoost）。"
+    },
+    {
+      "id": "small_dataset",
+      "name": "小样本数据集",
+      "description": "训练样本数量不足（< 500），复杂模型容易过拟合。应优先使用带正则化的简单模型（逻辑回归）、增加交叉验证折数，或使用数据增强。"
+    }
+  ],
+  "failure_cases": [
+    {
+      "id": "fc_001",
+      "error_type": "KeyError",
+      "error_message": "KeyError: 'churn' — 目标列名称在数据中不存在",
+      "fix_strategy": "检查CSV文件的列名是否与target_col参数一致；使用df.columns打印所有列名进行确认；注意大小写和空格差异。",
+      "related_capability_id": "logistic_regression_churn"
+    },
+    {
+      "id": "fc_002",
+      "error_type": "LowAUCScore",
+      "error_message": "roc_auc_score < 0.6 — 模型性能不达标，疑似受严重数据不平衡影响",
+      "fix_strategy": "检查目标变量分布，若正类比例 < 15%，先应用smote_oversampling进行过采样后再训练；同时将class_weight设为balanced；考虑切换为xgboost_churn并启用scale_pos_weight。",
+      "related_capability_id": "random_forest_churn"
+    },
+    {
+      "id": "fc_003",
+      "error_type": "MemoryError",
+      "error_message": "MemoryError: 无法为大型特征矩阵分配内存（One-Hot编码后维度过高）",
+      "fix_strategy": "在One-Hot编码前先执行feature_selection_rfe筛选重要特征；对高基数类别特征使用频率编码替代One-Hot；限制RandomForest的n_estimators和max_depth；考虑分批处理数据。",
+      "related_capability_id": "feature_selection_rfe"
+    }
+  ]
+}
