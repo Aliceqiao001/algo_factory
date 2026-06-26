@@ -33,9 +33,9 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    LangGraph 工作流 (AlgoFactoryWorkflow)            │
 │                                                                      │
-│  ┌───────────┐   ┌──────────┐   ┌────────┐   ┌─────────┐           │
-│  │understand │──▶│ retrieve │──▶│  plan  │──▶│ codegen │           │
-│  └───────────┘   └──────────┘   └────────┘   └────┬────┘           │
+│  ┌───────────┐   ┌──────────┐   ┌────────┐   ┌────────┐   ┌─────────┐  │
+│  │understand │──▶│ retrieve │──▶│  plan  │──▶│ critic │──▶│ codegen │  │
+│  └───────────┘   └──────────┘   └────────┘   └────────┘   └────┬────┘  │
 │        ▲                                           │                 │
 │        │          ┌──────────┐                     ▼                 │
 │        │          │ sediment │◀──(pass/limit)──┌──────────┐         │
@@ -65,7 +65,8 @@
 | 模块 | 路径 | 职责 |
 |------|------|------|
 | 知识图谱 | `knowledge/` | NetworkX 有向图 + ChromaDB 向量检索，存储算法能力节点 |
-| Agent 层 | `agents/` | 7 个 LangGraph 节点，每个节点调用 LLM 或确定性逻辑 |
+| Agent 层 | `agents/` | 8 个 LangGraph 节点，每个节点调用 LLM 或确定性逻辑 |
+| critic | `agents/critic.py` | 评审 PlanningAgent 方案，从 KG 历史记录评估风险，可切换备选算法 |
 | 执行器 | `executor/` | subprocess 沙箱执行生成代码，解析 stdout 中的 JSON 指标 |
 | 界面 | `ui/` | Streamlit Web 界面，流式展示每个节点进度 |
 | 数据 | `data/` | 合成客户流失数据集 (1000 行) |
@@ -93,27 +94,45 @@ class AlgorithmCapability:
     validation_history: List[ValidationRecord]  # 历史验证记录（自动积累）
 ```
 
-### 已注册的 6 个能力节点
+### 已注册的 11 个能力节点
 
 | ID | 名称 | 类别 |
 |----|------|------|
 | `logistic_regression_churn` | 逻辑回归流失预测 | classification |
 | `random_forest_churn` | 随机森林流失预测 | classification |
 | `xgboost_churn` | XGBoost 流失预测 | classification |
+| `lightgbm_churn` | LightGBM 流失预测 | classification |
+| `neural_network_churn` | MLP 神经网络流失预测 | classification |
+| `catboost_churn` | CatBoost 流失预测 | classification |
 | `smote_oversampling` | SMOTE 过采样 | preprocessing |
 | `standard_scaler_preprocessing` | 标准化预处理 | preprocessing |
+| `pca_reduction` | PCA 主成分降维 | preprocessing |
+| `missing_value_imputer` | 缺失值填充预处理 | preprocessing |
 | `feature_selection_rfe` | RFE 递归特征消除 | feature_engineering |
 
-### 知识图谱语义边
+### 知识图谱语义边（共 20 条）
 
 ```
 smote_oversampling      ──REQUIRES──▶  logistic_regression_churn
 smote_oversampling      ──REQUIRES──▶  random_forest_churn
 smote_oversampling      ──REQUIRES──▶  xgboost_churn
+smote_oversampling      ──REQUIRES──▶  lightgbm_churn
+smote_oversampling      ──REQUIRES──▶  neural_network_churn
+smote_oversampling      ──REQUIRES──▶  catboost_churn
 standard_scaler         ──REQUIRES──▶  logistic_regression_churn
+standard_scaler         ──REQUIRES──▶  neural_network_churn
+pca_reduction           ──REQUIRES──▶  neural_network_churn
+pca_reduction           ──REQUIRES──▶  logistic_regression_churn
+missing_value_imputer   ──REQUIRES──▶  logistic_regression_churn
+missing_value_imputer   ──REQUIRES──▶  neural_network_churn
 xgboost_churn           ──SIMILAR_TO─▶ random_forest_churn
+lightgbm_churn          ──SIMILAR_TO─▶ xgboost_churn
+catboost_churn          ──SIMILAR_TO─▶ xgboost_churn
+neural_network_churn    ──SIMILAR_TO─▶ random_forest_churn
 feature_selection_rfe   ──REQUIRES──▶  xgboost_churn
 feature_selection_rfe   ──REQUIRES──▶  random_forest_churn
+feature_selection_rfe   ──REQUIRES──▶  lightgbm_churn
+feature_selection_rfe   ──REQUIRES──▶  catboost_churn
 ```
 
 ---
@@ -127,6 +146,7 @@ feature_selection_rfe   ──REQUIRES──▶  random_forest_churn
 | understand | `UnderstandingAgent` | ✅ | 解析用户需求为 JSON 结构 |
 | retrieve | `RetrievalAgent` | ❌ | 向量语义检索 + SMOTE 注入规则 |
 | plan | `PlanningAgent` | ✅ | 选择最优算法，生成实施方案 |
+| **critic** | **`CriticAgent`** | ✅ | **评审方案得分(0-10)，可根据 KG 历史记录切换备选算法** |
 | codegen | `CodeGenAgent` | ✅ | 基于模板和方案生成完整 Python 脚本 |
 | validate | `ValidatorAgent` | ❌ | subprocess 沙箱执行，解析指标 |
 | repair | `RepairAgent` | ✅ | 诊断错误/低指标，LLM 修复代码 |
@@ -415,5 +435,20 @@ X = X.drop(columns=high_card, errors='ignore')
 
 - **跨领域迁移**：从客户流失迁移到金融风控、医疗诊断等场景
 - **自学习机制**：系统运行产生的数据自动用于微调 LLM 规划能力
-- **多智能体协作**：引入专家 Agent（特征工程专家、调参专家）并行工作
 - **知识图谱自增长**：新算法经验自动抽取为新节点，无需人工录入
+
+### ✅ 已实现：多智能体协作（CriticAgent）
+
+`plan → critic → codegen` 三节点协作机制已上线：
+
+- **CriticAgent** 在代码生成前对 PlanningAgent 的方案进行独立评审
+- 从知识图谱历史记录（成功率、平均 AUC）评估该算法的可靠性
+- 若评审不通过，自动切换至知识图谱 `SIMILAR_TO` 边指向的备选算法
+- 评审结果（得分 0-10、担忧点、建议）写入 AgentState，供 UI 展示和后续沉淀
+
+```
+[plan]   选定算法: catboost_churn
+[critic] 评审得分: 8/10  通过: True
+         担忧: 暂无历史记录；建议与 XGBoost 对比实验
+[codegen] 基于评审结果生成代码
+```
