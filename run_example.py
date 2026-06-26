@@ -63,6 +63,12 @@ if __name__ == "__main__":
         elif node_name == "plan":
             print(f"  选定算法:   {state_update.get('selected_capability_id')}")
             print(f"  依赖包:     {state_update.get('selected_dependencies')}")
+        elif node_name == "critic":
+            print(f"  评审得分:   {state_update.get('critic_score')}/10")
+            print(f"  是否通过:   {state_update.get('critic_approved')}")
+            feedback = state_update.get("critic_feedback", "")
+            print(f"  反馈:       {feedback[:100]}")
+            final_id = state_update.get("selected_capability_id", "")
         elif node_name == "codegen":
             code = state_update.get("generated_code", "")
             print(f"  代码行数:   {len(code.splitlines())}")

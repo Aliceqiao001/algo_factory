@@ -1,8 +1,8 @@
 """Integration tests for the LangGraph workflow end-to-end."""
 
 import pytest
-from agents.workflow import run_workflow
-from agents.state import AgentState
+from agents.workflow import AlgoFactoryWorkflow, _route_after_validate
+from agents.state import AgentState, create_initial_state
 
 
 def test_workflow_completes():

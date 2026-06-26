@@ -37,6 +37,7 @@ _NODE_LABELS = {
     "understand": "🧠 需求理解",
     "retrieve":   "🔍 知识检索",
     "plan":       "📋 方案规划",
+    "critic":     "🎯 方案评审",
     "codegen":    "⚙️  代码生成",
     "validate":   "✅ 验证执行",
     "repair":     "🔧 自动修复",
@@ -172,6 +173,18 @@ def _render_node_output(node_name: str, state: dict):
         deps = state.get("selected_dependencies", [])
         if deps:
             st.write(f"**依赖包:** {', '.join(deps)}")
+
+    elif node_name == "critic":
+        score = state.get("critic_score", 0)
+        approved = state.get("critic_approved", False)
+        col1, col2 = st.columns(2)
+        col1.metric("评审得分", f"{score}/10")
+        col2.write(f"**评审结论:** {'✅ 通过' if approved else '⚠️ 建议调整'}")
+        feedback = state.get("critic_feedback", "")
+        if feedback:
+            st.info(feedback)
+        final_cap = state.get("selected_capability_id", "")
+        st.write(f"**最终采用算法:** `{final_cap}`")
 
     elif node_name == "codegen":
         code = state.get("generated_code", "")

@@ -46,6 +46,8 @@ class CodeSandbox:
                 [sys.executable, str(tmp_path)],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
                 cwd=str(_PROJECT_ROOT),
                 env=env,

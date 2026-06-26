@@ -430,6 +430,18 @@
           "error_message": null,
           "code_version": "0",
           "notes": "修复次数:0, 查询:需要客户流失预测模型"
+        },
+        {
+          "timestamp": "2026-06-24T15:52:34.881828",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.785,
+            "auc": 0.8394097222222223,
+            "f1": 0.6950354609929078
+          },
+          "error_message": null,
+          "code_version": "0",
+          "notes": "修复次数:0, 查询:需要一个算法回归模型，对于客户是否流失做预测。要求AUC>0.75"
         }
       ]
     },
@@ -495,7 +507,16 @@
           "description": "过采样策略，auto表示过采样至多数类数量"
         }
       ],
-      "validation_history": []
+      "validation_history": [
+        {
+          "timestamp": "2026-06-26T10:51:07.361308",
+          "success": false,
+          "metrics": {},
+          "error_message": null,
+          "code_version": "3",
+          "notes": "修复次数:3, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        }
+      ]
     },
     {
       "id": "standard_scaler_preprocessing",
@@ -620,6 +641,470 @@
         }
       ],
       "validation_history": []
+    },
+    {
+      "id": "lightgbm_churn",
+      "name": "LightGBM流失预测",
+      "category": "classification",
+      "description": "使用LightGBM梯度提升框架预测客户流失，训练速度快于XGBoost，内存占用更低，适合大数据量与高维特征场景。",
+      "applicable_conditions": [
+        "目标变量为二分类",
+        "数据量 > 1000",
+        "对训练速度有要求",
+        "特征数量较多（> 20）"
+      ],
+      "input_schema": {
+        "required_columns": [
+          "target"
+        ],
+        "optional_columns": [
+          "age",
+          "tenure_months",
+          "monthly_charges",
+          "total_charges",
+          "num_products"
+        ],
+        "min_rows": 1000,
+        "data_types": {
+          "target": "int",
+          "age": "float",
+          "tenure_months": "float",
+          "monthly_charges": "float",
+          "total_charges": "float"
+        }
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [
+          "y_pred",
+          "y_prob"
+        ],
+        "description": "预测标签及正类概率"
+      },
+      "metrics": [
+        "accuracy",
+        "roc_auc",
+        "f1",
+        "precision",
+        "recall"
+      ],
+      "dependencies": [
+        "lightgbm",
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom lightgbm import LGBMClassifier\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.metrics import accuracy_score, roc_auc_score, f1_score\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nmodel = LGBMClassifier(\n    n_estimators=200,\n    max_depth=6,\n    learning_rate=0.05,\n    num_leaves=31,\n    subsample=0.8,\n    colsample_bytree=0.8,\n    random_state=42,\n    verbose=-1,\n)\nmodel.fit(X_train, y_train)\n\ny_pred = model.predict(X_test)\ny_prob = model.predict_proba(X_test)[:, 1]\n\nresults = {\n    'accuracy': accuracy_score(y_test, y_pred),\n    'roc_auc': roc_auc_score(y_test, y_prob),\n    'f1': f1_score(y_test, y_pred),\n}\nprint(results)\n",
+      "hyperparameters": [
+        {
+          "name": "n_estimators",
+          "default": 200,
+          "range": [
+            100,
+            200,
+            500,
+            1000
+          ],
+          "description": "提升轮数"
+        },
+        {
+          "name": "num_leaves",
+          "default": 31,
+          "range": [
+            15,
+            31,
+            63,
+            127
+          ],
+          "description": "每棵树最大叶子数，控制模型复杂度"
+        },
+        {
+          "name": "learning_rate",
+          "default": 0.05,
+          "range": [
+            0.01,
+            0.05,
+            0.1,
+            0.2
+          ],
+          "description": "学习率"
+        },
+        {
+          "name": "subsample",
+          "default": 0.8,
+          "range": [
+            0.6,
+            0.7,
+            0.8,
+            1.0
+          ],
+          "description": "样本采样比例"
+        }
+      ],
+      "validation_history": []
+    },
+    {
+      "id": "neural_network_churn",
+      "name": "MLP神经网络流失预测",
+      "category": "classification",
+      "description": "使用多层感知机（MLP）预测客户流失，能捕获特征间复杂非线性关系，需要特征标准化预处理。",
+      "applicable_conditions": [
+        "目标变量为二分类",
+        "数据量 > 2000",
+        "特征已完成标准化",
+        "允许较长训练时间",
+        "特征间存在复杂交互关系"
+      ],
+      "input_schema": {
+        "required_columns": [
+          "target"
+        ],
+        "optional_columns": [
+          "age",
+          "tenure_months",
+          "monthly_charges",
+          "total_charges",
+          "num_products"
+        ],
+        "min_rows": 2000,
+        "data_types": {
+          "target": "int",
+          "age": "float",
+          "tenure_months": "float",
+          "monthly_charges": "float",
+          "total_charges": "float"
+        }
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [
+          "y_pred",
+          "y_prob"
+        ],
+        "description": "预测标签及正类概率"
+      },
+      "metrics": [
+        "accuracy",
+        "roc_auc",
+        "f1",
+        "precision",
+        "recall"
+      ],
+      "dependencies": [
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom sklearn.neural_network import MLPClassifier\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.metrics import accuracy_score, roc_auc_score, f1_score\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nscaler = StandardScaler()\nX_train = scaler.fit_transform(X_train)\nX_test = scaler.transform(X_test)\n\nmodel = MLPClassifier(\n    hidden_layer_sizes=(128, 64, 32),\n    activation='relu',\n    max_iter=300,\n    random_state=42,\n    early_stopping=True,\n    validation_fraction=0.1,\n)\nmodel.fit(X_train, y_train)\n\ny_pred = model.predict(X_test)\ny_prob = model.predict_proba(X_test)[:, 1]\n\nresults = {\n    'accuracy': accuracy_score(y_test, y_pred),\n    'roc_auc': roc_auc_score(y_test, y_prob),\n    'f1': f1_score(y_test, y_pred),\n}\nprint(results)\n",
+      "hyperparameters": [
+        {
+          "name": "hidden_layer_sizes",
+          "default": [
+            128,
+            64,
+            32
+          ],
+          "range": [
+            [
+              64,
+              32
+            ],
+            [
+              128,
+              64,
+              32
+            ],
+            [
+              256,
+              128,
+              64
+            ]
+          ],
+          "description": "各隐藏层神经元数量"
+        },
+        {
+          "name": "activation",
+          "default": "relu",
+          "range": [
+            "relu",
+            "tanh",
+            "logistic"
+          ],
+          "description": "激活函数"
+        },
+        {
+          "name": "max_iter",
+          "default": 300,
+          "range": [
+            100,
+            200,
+            300,
+            500
+          ],
+          "description": "最大训练轮数"
+        },
+        {
+          "name": "learning_rate_init",
+          "default": 0.001,
+          "range": [
+            0.0001,
+            0.001,
+            0.01
+          ],
+          "description": "初始学习率"
+        }
+      ],
+      "validation_history": []
+    },
+    {
+      "id": "pca_reduction",
+      "name": "PCA主成分降维",
+      "category": "preprocessing",
+      "description": "使用主成分分析（PCA）对高维特征进行降维，消除多重共线性，提升后续模型训练速度，需在标准化后应用。",
+      "applicable_conditions": [
+        "特征数量 > 15",
+        "特征间存在高度相关性",
+        "特征已完成标准化",
+        "可接受一定程度的信息损失（保留95%方差）"
+      ],
+      "input_schema": {
+        "required_columns": [],
+        "optional_columns": [],
+        "min_rows": 200,
+        "data_types": {}
+      },
+      "output_schema": {
+        "format": "numpy_array",
+        "columns": [
+          "PC1",
+          "PC2",
+          "..."
+        ],
+        "description": "降维后的主成分矩阵，保留95%方差"
+      },
+      "metrics": [
+        "explained_variance_ratio",
+        "n_components_selected"
+      ],
+      "dependencies": [
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom sklearn.decomposition import PCA\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import accuracy_score, roc_auc_score, f1_score\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = pd.get_dummies(X, drop_first=True)\nX = X.fillna(X.median(numeric_only=True))\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nscaler = StandardScaler()\nX_train_scaled = scaler.fit_transform(X_train)\nX_test_scaled = scaler.transform(X_test)\n\npca = PCA(n_components=0.95, random_state=42)\nX_train_pca = pca.fit_transform(X_train_scaled)\nX_test_pca = pca.transform(X_test_scaled)\n\nmodel = LogisticRegression(C=1.0, max_iter=1000, random_state=42)\nmodel.fit(X_train_pca, y_train)\ny_pred = model.predict(X_test_pca)\ny_prob = model.predict_proba(X_test_pca)[:, 1]\n\nresults = {\n    'accuracy': accuracy_score(y_test, y_pred),\n    'roc_auc': roc_auc_score(y_test, y_prob),\n    'f1': f1_score(y_test, y_pred),\n}\nprint(results)\n",
+      "hyperparameters": [
+        {
+          "name": "n_components",
+          "default": 0.95,
+          "range": [
+            0.9,
+            0.95,
+            0.99,
+            10,
+            20
+          ],
+          "description": "保留方差比例（<1）或直接指定主成分数量（整数）"
+        },
+        {
+          "name": "whiten",
+          "default": false,
+          "range": [
+            true,
+            false
+          ],
+          "description": "是否对主成分做白化（方差归一化）"
+        }
+      ],
+      "validation_history": []
+    },
+    {
+      "id": "missing_value_imputer",
+      "name": "缺失值填充预处理",
+      "category": "preprocessing",
+      "description": "对数据集中的缺失值进行系统性填充：数值型特征用中位数填充，类别型特征用众数填充，输出完整无缺失的特征矩阵。",
+      "applicable_conditions": [
+        "数据集存在缺失值（NaN）",
+        "缺失比例 < 30%",
+        "使用对缺失值敏感的算法（逻辑回归、SVM、神经网络）"
+      ],
+      "input_schema": {
+        "required_columns": [],
+        "optional_columns": [],
+        "min_rows": 50,
+        "data_types": {}
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [],
+        "description": "填充后的完整数据集，无缺失值"
+      },
+      "metrics": [
+        "missing_rate_before",
+        "missing_rate_after",
+        "n_imputed_cols"
+      ],
+      "dependencies": [
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import accuracy_score, roc_auc_score, f1_score\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\n\nnumeric_cols = X.select_dtypes(include=['number']).columns.tolist()\ncategory_cols = X.select_dtypes(include=['object']).columns.tolist()\n\nif numeric_cols:\n    num_imputer = SimpleImputer(strategy='median')\n    X[numeric_cols] = num_imputer.fit_transform(X[numeric_cols])\n\nif category_cols:\n    cat_imputer = SimpleImputer(strategy='most_frequent')\n    X[category_cols] = cat_imputer.fit_transform(X[category_cols])\n\nX = pd.get_dummies(X, drop_first=True)\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nmodel = LogisticRegression(C=1.0, max_iter=1000, random_state=42)\nmodel.fit(X_train, y_train)\ny_pred = model.predict(X_test)\ny_prob = model.predict_proba(X_test)[:, 1]\n\nresults = {\n    'accuracy': accuracy_score(y_test, y_pred),\n    'roc_auc': roc_auc_score(y_test, y_prob),\n    'f1': f1_score(y_test, y_pred),\n}\nprint(results)\n",
+      "hyperparameters": [
+        {
+          "name": "numeric_strategy",
+          "default": "median",
+          "range": [
+            "mean",
+            "median",
+            "most_frequent"
+          ],
+          "description": "数值型特征填充策略"
+        },
+        {
+          "name": "categorical_strategy",
+          "default": "most_frequent",
+          "range": [
+            "most_frequent",
+            "constant"
+          ],
+          "description": "类别型特征填充策略"
+        },
+        {
+          "name": "fill_value",
+          "default": "missing",
+          "range": null,
+          "description": "strategy=constant时的填充值"
+        }
+      ],
+      "validation_history": []
+    },
+    {
+      "id": "catboost_churn",
+      "name": "CatBoost流失预测",
+      "category": "classification",
+      "description": "使用CatBoost梯度提升框架预测客户流失，原生支持类别型特征无需手动编码，对缺失值鲁棒，训练稳定不易过拟合。",
+      "applicable_conditions": [
+        "目标变量为二分类",
+        "数据量 > 500",
+        "存在多个类别型特征",
+        "不希望手动做特征编码"
+      ],
+      "input_schema": {
+        "required_columns": [
+          "target"
+        ],
+        "optional_columns": [
+          "age",
+          "tenure_months",
+          "monthly_charges",
+          "total_charges",
+          "num_products",
+          "geography",
+          "gender"
+        ],
+        "min_rows": 500,
+        "data_types": {
+          "target": "int",
+          "age": "float",
+          "tenure_months": "float",
+          "monthly_charges": "float",
+          "total_charges": "float"
+        }
+      },
+      "output_schema": {
+        "format": "dataframe",
+        "columns": [
+          "y_pred",
+          "y_prob"
+        ],
+        "description": "预测标签及正类概率"
+      },
+      "metrics": [
+        "accuracy",
+        "roc_auc",
+        "f1",
+        "precision",
+        "recall"
+      ],
+      "dependencies": [
+        "catboost",
+        "scikit-learn",
+        "pandas",
+        "numpy"
+      ],
+      "code_template": "import pandas as pd\nimport numpy as np\nfrom catboost import CatBoostClassifier\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.metrics import accuracy_score, roc_auc_score, f1_score\n\ndf = pd.read_csv('{data_path}')\ntarget_col = '{target_col}'\n\nX = df.drop(columns=[target_col])\ny = df[target_col]\n\nhigh_card = [c for c in X.columns if X[c].dtype == object and X[c].nunique() > len(X) * 0.5]\nX = X.drop(columns=high_card, errors='ignore')\nX = X.fillna(X.median(numeric_only=True))\n\ncat_features = [i for i, col in enumerate(X.columns) if X[col].dtype == object]\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n\nmodel = CatBoostClassifier(\n    iterations=200,\n    depth=6,\n    learning_rate=0.05,\n    cat_features=cat_features,\n    random_seed=42,\n    verbose=0,\n)\nmodel.fit(X_train, y_train)\n\ny_pred = model.predict(X_test)\ny_prob = model.predict_proba(X_test)[:, 1]\n\nresults = {\n    'accuracy': accuracy_score(y_test, y_pred),\n    'roc_auc': roc_auc_score(y_test, y_prob),\n    'f1': f1_score(y_test, y_pred),\n}\nprint(results)\n",
+      "hyperparameters": [
+        {
+          "name": "iterations",
+          "default": 200,
+          "range": [
+            100,
+            200,
+            500,
+            1000
+          ],
+          "description": "提升轮数"
+        },
+        {
+          "name": "depth",
+          "default": 6,
+          "range": [
+            4,
+            6,
+            8,
+            10
+          ],
+          "description": "树的最大深度"
+        },
+        {
+          "name": "learning_rate",
+          "default": 0.05,
+          "range": [
+            0.01,
+            0.05,
+            0.1,
+            0.2
+          ],
+          "description": "学习率"
+        },
+        {
+          "name": "l2_leaf_reg",
+          "default": 3.0,
+          "range": [
+            1.0,
+            3.0,
+            5.0,
+            10.0
+          ],
+          "description": "L2正则化系数"
+        }
+      ],
+      "validation_history": [
+        {
+          "timestamp": "2026-06-26T10:53:30.111694",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.775,
+            "auc": 0.841796875,
+            "f1": 0.6666666666666666
+          },
+          "error_message": null,
+          "code_version": "2",
+          "notes": "修复次数:2, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        },
+        {
+          "timestamp": "2026-06-26T11:00:14.552810",
+          "success": true,
+          "metrics": {
+            "accuracy": 0.80078125,
+            "auc": 0.8636474609375,
+            "f1": 0.8015564202334631
+          },
+          "error_message": null,
+          "code_version": "2",
+          "notes": "修复次数:2, 查询:我需要一个客户流失预测模型，数据存在data/churn_sample.csv，目标列是Churn，"
+        }
+      ]
     }
   ],
   "data_patterns": [

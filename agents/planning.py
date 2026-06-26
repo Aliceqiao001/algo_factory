@@ -25,12 +25,14 @@ _PROMPT_TMPL = """用户任务类型：{task_type}
 用户约束条件：{constraints}
 目标指标：{target_metric}
 
-可用算法能力列表：
+可用分类算法列表（category=classification，只能从这里选择）：
 {capabilities_text}
 
-请选择最合适的算法，返回JSON（只输出JSON）：
+注意：必须选择 category=classification 的算法作为主算法，预处理步骤会在代码中自动处理。
+
+请选择最合适的分类算法，返回JSON（只输出JSON）：
 {{
-  "selected_capability_id": "选择的能力id",
+  "selected_capability_id": "选择的能力id（必须是classification类别）",
   "implementation_plan": "详细实施步骤，1.加载数据 2.预处理 3.训练 4.评估...",
   "reasoning": "选择理由"
 }}"""
@@ -66,9 +68,22 @@ class PlanningAgent:
             logger.warning("PlanningAgent: no retrieved capabilities, using fallback")
             return self._fallback(state)
 
+        # Only expose classification nodes to the LLM — preprocessing is handled in codegen
+        clf_candidates = [
+            c for c in retrieved if c.get("category") == "classification"
+        ]
+        if not clf_candidates:
+            # Fallback: enrich from graph and re-filter
+            clf_candidates = [
+                {"id": cap.id, "name": cap.name, "category": cap.category,
+                 "description": cap.description}
+                for cap in self._kg.get_all_capabilities()
+                if cap.category == "classification"
+            ][:5]
+
         capabilities_text = "\n".join(
-            f"- id={c['id']}: {c['name']} — {c.get('description', '')}"
-            for c in retrieved
+            f"- id={c['id']} (category={c.get('category','?')}): {c['name']} — {c.get('description', '')}"
+            for c in clf_candidates
         )
         prompt = _PROMPT_TMPL.format(
             task_type=state.get("task_type", "classification"),
@@ -106,7 +121,9 @@ class PlanningAgent:
 
     def _fallback(self, state: AgentState) -> dict:
         retrieved = state.get("retrieved_capabilities", [])
-        cap_id = retrieved[0]["id"] if retrieved else "logistic_regression_churn"
+        # Prefer classification nodes in fallback
+        clf = [c for c in retrieved if c.get("category") == "classification"]
+        cap_id = (clf or retrieved or [{}])[0].get("id", "xgboost_churn")
         return {
             "selected_capability_id": cap_id,
             "implementation_plan": "1. 加载数据 2. 预处理 3. 训练模型 4. 评估指标",

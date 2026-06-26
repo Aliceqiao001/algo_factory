@@ -55,12 +55,8 @@ class KnowledgeGraph:
     def load_from_json(self, path: Path | str) -> None:
         """Parse capabilities.json and populate graph nodes and edges.
 
-        Automatically wires the following semantic edges after loading:
-        - smote_oversampling  --REQUIRES-->  each classification capability
-        - standard_scaler_preprocessing  --REQUIRES-->  logistic_regression_churn
-        - xgboost_churn  --SIMILAR_TO-->  random_forest_churn
-        - feature_selection_rfe  --REQUIRES-->  xgboost_churn
-        - feature_selection_rfe  --REQUIRES-->  random_forest_churn
+        Automatically wires semantic edges after loading; see
+        :meth:`_wire_default_edges` for the full edge inventory.
         """
         path = Path(path)
         with path.open(encoding="utf-8") as f:
@@ -82,37 +78,63 @@ class KnowledgeGraph:
         self._wire_default_edges()
 
     def _wire_default_edges(self) -> None:
-        """Add the hard-coded semantic edges described in load_from_json."""
-        classification_ids = [
-            cap_id
-            for cap_id, cap in self._capabilities.items()
-            if cap.category == "classification"
+        """Add semantic edges between capability nodes after loading.
+
+        Edge inventory
+        --------------
+        SMOTE → all classification nodes          (imbalanced data preprocessing)
+        standard_scaler → logistic_regression     (linear model needs normalisation)
+        standard_scaler → neural_network          (MLP is scale-sensitive)
+        pca_reduction   → neural_network          (dimensionality reduction before NN)
+        pca_reduction   → logistic_regression     (PCA + linear model pipeline)
+        missing_imputer → logistic_regression     (LR requires no NaN)
+        missing_imputer → neural_network          (MLP requires no NaN)
+        xgboost    SIMILAR_TO random_forest
+        lightgbm   SIMILAR_TO xgboost             (same GBDT family)
+        catboost   SIMILAR_TO xgboost             (same GBDT family)
+        neural_net SIMILAR_TO random_forest       (both strong non-linear models)
+        feature_rfe REQUIRES  xgboost / random_forest / lightgbm / catboost
+        """
+        has = self._capabilities.__contains__
+
+        # ── SMOTE → every classification node ─────────────────────────────
+        if has("smote_oversampling"):
+            for cap_id, cap in self._capabilities.items():
+                if cap.category == "classification":
+                    self.add_edge("smote_oversampling", cap_id, RELATION_REQUIRES)
+
+        # ── standard_scaler → scale-sensitive models ───────────────────────
+        for dst in ("logistic_regression_churn", "neural_network_churn"):
+            if has("standard_scaler_preprocessing") and has(dst):
+                self.add_edge("standard_scaler_preprocessing", dst, RELATION_REQUIRES)
+
+        # ── PCA → downstream models ────────────────────────────────────────
+        for dst in ("neural_network_churn", "logistic_regression_churn"):
+            if has("pca_reduction") and has(dst):
+                self.add_edge("pca_reduction", dst, RELATION_REQUIRES)
+
+        # ── missing_value_imputer → NaN-sensitive models ───────────────────
+        for dst in ("logistic_regression_churn", "neural_network_churn"):
+            if has("missing_value_imputer") and has(dst):
+                self.add_edge("missing_value_imputer", dst, RELATION_REQUIRES)
+
+        # ── SIMILAR_TO edges among classifiers ─────────────────────────────
+        similar_pairs = [
+            ("xgboost_churn",        "random_forest_churn"),
+            ("lightgbm_churn",       "xgboost_churn"),
+            ("catboost_churn",       "xgboost_churn"),
+            ("neural_network_churn", "random_forest_churn"),
         ]
+        for src, dst in similar_pairs:
+            if has(src) and has(dst):
+                self.add_edge(src, dst, RELATION_SIMILAR_TO)
 
-        if "smote_oversampling" in self._capabilities:
-            for cls_id in classification_ids:
-                self.add_edge("smote_oversampling", cls_id, RELATION_REQUIRES)
-
-        if (
-            "standard_scaler_preprocessing" in self._capabilities
-            and "logistic_regression_churn" in self._capabilities
-        ):
-            self.add_edge(
-                "standard_scaler_preprocessing",
-                "logistic_regression_churn",
-                RELATION_REQUIRES,
-            )
-
-        if (
-            "xgboost_churn" in self._capabilities
-            and "random_forest_churn" in self._capabilities
-        ):
-            self.add_edge("xgboost_churn", "random_forest_churn", RELATION_SIMILAR_TO)
-
-        if "feature_selection_rfe" in self._capabilities:
-            for target_id in ("xgboost_churn", "random_forest_churn"):
-                if target_id in self._capabilities:
-                    self.add_edge("feature_selection_rfe", target_id, RELATION_REQUIRES)
+        # ── feature_selection_rfe → tree-based models ─────────────────────
+        if has("feature_selection_rfe"):
+            for dst in ("xgboost_churn", "random_forest_churn",
+                        "lightgbm_churn", "catboost_churn"):
+                if has(dst):
+                    self.add_edge("feature_selection_rfe", dst, RELATION_REQUIRES)
 
     def save_to_json(self, path: Optional[Path | str] = None) -> None:
         """Serialise the current graph state back to JSON.

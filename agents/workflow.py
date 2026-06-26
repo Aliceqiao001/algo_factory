@@ -6,6 +6,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from agents.codegen import CodeGenAgent
+from agents.critic import CriticAgent
 from agents.planning import PlanningAgent
 from agents.repair import RepairAgent
 from agents.retrieval import RetrievalAgent
@@ -25,12 +26,12 @@ class AlgoFactoryWorkflow:
 
     Graph topology
     --------------
-    understand → retrieve → plan → codegen → validate
-                                                ↓              ↓
-                                           (passed/limit)   (retry)
-                                             sediment ←── repair ←┘
-                                                ↓
-                                               END
+    understand → retrieve → plan → critic → codegen → validate
+                                                          ↓              ↓
+                                                     (passed/limit)   (retry)
+                                                       sediment ←── repair ←┘
+                                                          ↓
+                                                         END
     """
 
     def __init__(self) -> None:
@@ -44,6 +45,7 @@ class AlgoFactoryWorkflow:
         self.understanding = UnderstandingAgent()
         self.retrieval = RetrievalAgent(self.kg, self.vs)
         self.planning = PlanningAgent(self.kg)
+        self.critic = CriticAgent(self.kg)
         self.codegen = CodeGenAgent(self.kg)
         self.validator = ValidatorAgent(self.sandbox)
         self.repair = RepairAgent()
@@ -62,6 +64,7 @@ class AlgoFactoryWorkflow:
         workflow.add_node("understand", lambda s: self.understanding.run(s))
         workflow.add_node("retrieve",   lambda s: self.retrieval.run(s))
         workflow.add_node("plan",       lambda s: self.planning.run(s))
+        workflow.add_node("critic",     lambda s: self.critic.run(s))
         workflow.add_node("codegen",    lambda s: self.codegen.run(s))
         workflow.add_node("validate",   lambda s: self.validator.run(s))
         workflow.add_node("repair",     lambda s: self.repair.run(s))
@@ -71,7 +74,8 @@ class AlgoFactoryWorkflow:
         workflow.set_entry_point("understand")
         workflow.add_edge("understand", "retrieve")
         workflow.add_edge("retrieve",   "plan")
-        workflow.add_edge("plan",       "codegen")
+        workflow.add_edge("plan",       "critic")
+        workflow.add_edge("critic",     "codegen")
         workflow.add_edge("codegen",    "validate")
 
         # Conditional branch after validation

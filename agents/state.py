@@ -34,6 +34,11 @@ class AgentState(TypedDict):
     metrics_result: Dict[str, float]    # parsed metric scores {accuracy: 0.85, …}
     validation_passed: bool             # True if all metrics exceed thresholds
 
+    # --- critic review (between plan and codegen) ---
+    critic_approved: bool               # True if CriticAgent approved the plan
+    critic_score: int                   # 0–10 quality score from critic
+    critic_feedback: str                # combined concerns + suggestions from critic
+
     # --- repair control ---
     max_repair_attempts: int            # ceiling on repair loops (default 3)
     repair_history: List[Dict]          # [{attempt, error, fix}, …] across all loops
@@ -66,6 +71,9 @@ def create_initial_state(user_query: str) -> AgentState:
         execution_error="",
         metrics_result={},
         validation_passed=False,
+        critic_approved=False,
+        critic_score=0,
+        critic_feedback="",
         max_repair_attempts=3,
         repair_history=[],
         sediment_done=False,

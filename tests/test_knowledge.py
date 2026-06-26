@@ -12,17 +12,24 @@ from knowledge.vector_store import VectorStore
 
 
 def test_graph_load():
-    """KnowledgeGraph loads exactly 6 capability nodes from capabilities.json."""
+    """KnowledgeGraph loads all 11 capability nodes from capabilities.json."""
     kg = KnowledgeGraph()
     caps = kg.get_all_capabilities()
-    assert len(caps) == 6, f"Expected 6 capabilities, got {len(caps)}"
+    assert len(caps) == 11, f"Expected 11 capabilities, got {len(caps)}"
     ids = {c.id for c in caps}
+    # original 6
     assert "logistic_regression_churn" in ids
     assert "random_forest_churn" in ids
     assert "xgboost_churn" in ids
     assert "smote_oversampling" in ids
     assert "standard_scaler_preprocessing" in ids
     assert "feature_selection_rfe" in ids
+    # new 5
+    assert "lightgbm_churn" in ids
+    assert "neural_network_churn" in ids
+    assert "pca_reduction" in ids
+    assert "missing_value_imputer" in ids
+    assert "catboost_churn" in ids
 
 
 def test_vector_search():
